@@ -33,7 +33,7 @@ export function CheckoutForm({ cities, storeSlug, onlinePayments, direct }: { ci
   const okPhone = normalizeCmPhone(phone);
   const city = cities.find((c) => c.id === cityId);
   const shipping = city?.fee ?? 0;
-  // Paiement : à la livraison par défaut ; en ligne (Mobile Money, carte) sur la page sécurisée SasPay.
+  // Paiement : à la livraison par défaut ; en ligne (Mobile Money, carte) sur la page sécurisée KPay.
   const [method, setMethod] = useState<PayMethod>("cod");
   const [paying, setPaying] = useState<string | null>(null);
   const total = subtotal + shipping;

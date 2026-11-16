@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getMessages } from "@/server/repo";
+import { MessageDelete } from "@/components/platform/message-delete";
 import { MessageToggle } from "@/components/platform/message-toggle";
 import { loadStore, type StoreParams } from "@/components/platform/store-ctx";
 import { Icon } from "@/components/ui/icons";
@@ -28,7 +29,7 @@ export default async function Messages({ params }: StoreParams) {
           ) : (
             <div className="nx-tablewrap">
               <table className="nx-table">
-                <thead><tr><th scope="col">Reçu le</th><th scope="col">Client</th><th scope="col">Téléphone</th><th scope="col">Message</th><th scope="col">Statut</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+                <thead><tr><th scope="col">Reçu le</th><th scope="col">Client</th><th scope="col">Téléphone</th><th scope="col">Message</th><th scope="col">Statut</th><th scope="col"><span className="sr-only">Supprimer</span></th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
                 <tbody>
                   {list.map((m) => {
                     const wa = `https://wa.me/${m.phone.replace(/\D/g, "")}`;
@@ -39,6 +40,7 @@ export default async function Messages({ params }: StoreParams) {
                         <td className="mono">{displayPhone(m.phone)}</td>
                         <td style={{ minWidth: 260, maxWidth: 420 }}><Link href={`${base}/messages/${m.id}`} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.message}</Link></td>
                         <td><MessageToggle storeSlug={store.slug} id={m.id} handled={m.handled} /></td>
+                        <td><MessageDelete storeSlug={store.slug} id={m.id} name={m.name} /></td>
                         <td className="right" style={{ whiteSpace: "nowrap" }}>
                           <a className="nx-btn sm" href={`tel:${m.phone}`}><Icon name="phone" size={14} /> Appeler</a>{" "}
                           <a className="nx-btn sm" href={wa} target="_blank" rel="noopener noreferrer"><Icon name="message" size={14} /> WhatsApp</a>

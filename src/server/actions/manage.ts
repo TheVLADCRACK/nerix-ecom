@@ -287,7 +287,8 @@ export async function editCampaign(storeSlug: string, id: string, input: z.input
   if (!d || !z.uuid().safeParse(id).success) return fail("Données invalides.");
   const sql = d.action === "stop" ? "UPDATE ecom.campaigns SET end_on = $3 WHERE id = $1 AND store_id = $2 AND start_on <= $3 RETURNING name"
     : d.action === "resume" ? "UPDATE ecom.campaigns SET end_on = NULL WHERE id = $1 AND store_id = $2 RETURNING name"
-    : "UPDATE ecom.campaigns SET spend = spend + $3 WHERE id = $1 AND store_id = $2 RETURNING name";
+    // Ajout daté (jour de Douala) : la dépense compte ce jour-là, pas au lancement de la campagne.
+    : "UPDATE ecom.campaigns SET spend = spend + $3, budget_adds = budget_adds || jsonb_build_array(jsonb_build_object('date', to_char(now() AT TIME ZONE 'Africa/Douala', 'YYYY-MM-DD'), 'amount', $3::numeric)) WHERE id = $1 AND store_id = $2 RETURNING name";
   const row = await one<{ name: string }>(sql, d.action === "resume" ? [id, store.id] : [id, store.id, d.action === "stop" ? d.end : d.add]);
   if (!row) return fail(d.action === "stop" ? "La date d'arrêt doit être après le début." : "Campagne introuvable.");
   await audit(staff, store.id, { stop: "Campagne arrêtée", resume: "Campagne relancée", budget: "Budget de campagne ajouté" }[d.action], row.name, d);
@@ -306,14 +307,39 @@ export async function setMessageHandled(storeSlug: string, id: string, handled: 
   return { ok: true };
 }
 
-/** Panier abandonné relancé (WhatsApp, appel) ou remis à relancer. */
-export async function setCartContacted(storeSlug: string, id: string, contacted: boolean): Promise<ActionResult> {
-  const { staff, store } = await ctx(storeSlug, "carts.update");
-  if (!parse(z.uuid(), id)) return fail("Panier invalide.");
-  await q("UPDATE ecom.carts SET status = $3 WHERE store_id = $1 AND id = $2 AND status <> 'ordered'", [store.id, id, contacted ? "contacted" : "open"]);
-  await audit(staff, store.id, contacted ? "Panier relancé" : "Panier remis à relancer", id);
+/** Supprimer définitivement un message reçu (après confirmation dans l'outil). */
+export async function deleteMessage(storeSlug: string, id: string): Promise<ActionResult> {
+  const { staff, store } = await ctx(storeSlug, "messages.update");
+  if (!parse(z.uuid(), id)) return fail("Message invalide.");
+  const gone = await one<{ name: string }>("DELETE FROM ecom.messages WHERE store_id = $1 AND id = $2 RETURNING name", [store.id, id]);
+  if (!gone) return fail("Message introuvable.");
+  await audit(staff, store.id, "Message supprimé", id, { name: gone.name });
   revalidatePath(`/b/${store.slug}`, "layout");
-  return { ok: true };
+  return { ok: true, message: "Message supprimé." };
+}
+
+/**
+ * Convertir un panier abandonné en commande : mêmes contrôles qu'une commande saisie par l'équipe (prix et stock recalculés),
+ * puis le panier est marqué « commandé » avec son numéro.
+ */
+export async function convertCart(storeSlug: string, id: string): Promise<ActionResult & { number?: string }> {
+  const { store } = await ctx(storeSlug, "orders.update");
+  if (!parse(z.uuid(), id)) return fail("Panier invalide.");
+  const c = await one<{ customer: { firstName?: string; lastName?: string; phone?: string }; city: string; lines: { sku: string; quantity: number }[]; status: string }>(
+    "SELECT customer, city, lines, status FROM ecom.carts WHERE store_id = $1 AND id = $2", [store.id, id]);
+  if (!c) return fail("Panier introuvable.");
+  if (c.status === "ordered") return fail("Ce panier est déjà devenu une commande.");
+  const city = await one<{ id: string }>("SELECT id FROM ecom.cities WHERE store_id = $1 AND name = $2", [store.id, c.city]);
+  if (!city) return fail("Ville non choisie par le client : saisissez la commande depuis « Nouvelle commande ».");
+  const res = await saveOrder(storeSlug, "", {
+    firstName: c.customer.firstName?.trim() || "Client", lastName: c.customer.lastName ?? "", phone: c.customer.phone ?? "", cityId: city.id,
+    neighborhood: "", landmark: "", note: "Commande issue d'un panier abandonné", channel: "boutique",
+    lines: c.lines.map((l) => ({ sku: l.sku, qty: l.quantity })),
+  });
+  if (!res.ok || !res.number) return res;
+  await q("UPDATE ecom.carts SET status = 'ordered', order_number = $3, updated_at = now() WHERE store_id = $1 AND id = $2", [store.id, id, res.number]);
+  revalidatePath(`/b/${store.slug}`, "layout");
+  return { ok: true, message: `Commande ${res.number} créée.`, number: res.number };
 }
 
 const ReviewIn = z.object({ productSlug: z.string().regex(/^[a-z0-9-]{1,80}$/), name: text(40).min(2), city: text(40), rating: z.coerce.number().int().min(1).max(5), text: text(600).min(5), source: text(60).min(1), consent: z.literal(true), photo: z.string().url().startsWith("https://").max(500).nullable() }).strict();

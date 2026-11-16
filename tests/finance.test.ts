@@ -23,10 +23,14 @@ describe("finance", () => {
     expect(bankFee(100000)).toBe(2140);
   });
 
-  it("répartit une campagne par jour sur sa période", () => {
-    const c = books.campaigns[0]!; // 30 jours, 19 680 FCFA
-    expect(adsBetween(c, "2026-03-01", "2026-04-01")).toBeCloseTo(19680 * 15 / 30);
-    expect(adsBetween(c, "2026-04-01", "2026-05-01")).toBeCloseTo(19680 * 15 / 30);
+  it("compte le budget le jour où il est engagé : début, puis chaque ajout ; la date de fin ne déplace rien", () => {
+    const c = books.campaigns[0]!; // 30 € × 656 = 19 680 FCFA, lancée le 17/03
+    expect(adsBetween(c, "2026-03-01", "2026-04-01")).toBeCloseTo(19680);
+    expect(adsBetween(c, "2026-04-01", "2026-05-01")).toBe(0);
+    expect(adsBetween({ ...c, end: "2026-11-15" }, "2026-03-01", "2026-04-01")).toBeCloseTo(19680);
+    const topped = { ...c, spend: 40, budgetAdds: [{ date: "2026-04-03", amount: 10 }] };
+    expect(adsBetween(topped, "2026-03-01", "2026-04-01")).toBeCloseTo(19680);
+    expect(adsBetween(topped, "2026-04-01", "2026-05-01")).toBeCloseTo(6560);
   });
 
   it("compte de résultat : livrées seulement, charges hors coût de revient, impôt sur bénéfice positif", () => {
@@ -37,9 +41,12 @@ describe("finance", () => {
     expect(r.delivery).toBe(2500);
     expect(r.charges).toBe(3000);
     expect(r.losses).toBe(1600);
-    expect(r.ads).toBeCloseTo(9840);
-    expect(r.ebt).toBeCloseTo(29000 - 2400 - 2500 - 9840 - 3000 - 1600);
-    expect(r.net).toBeCloseTo(r.ebt * 0.75);
+    expect(r.ads).toBeCloseTo(19680);
+    expect(r.ebt).toBeCloseTo(29000 - 2400 - 2500 - 19680 - 3000 - 1600);
+    expect(r.ebt).toBeLessThan(0); // toute la campagne tombe en mars : perte, donc pas d'impôt sur le bénéfice
+    expect(r.incomeTax).toBe(0);
+    expect(r.net).toBeCloseTo(r.ebt);
+    expect(pnl([order("completed", "2026-05-02", 3, 0)], books, "2026-05-01", "2026-06-01").incomeTax).toBeCloseTo(0.25 * (29000 - 2400));
     expect([r.delivered, r.cancelled, r.placed]).toEqual([2, 1, 3]);
   });
 
@@ -53,7 +60,11 @@ describe("finance", () => {
     const c = { ...books.campaigns[0]!, start: "2026-03-01", end: "2026-03-31" };
     expect(campaignResults(c, [{ ...o, source: { channel: "meta", campaign: "lampe-nov" } }])).toEqual({ mode: "code", orders: 1, delivered: 1, revenue: 10000 });
     expect(campaignResults(c, [o, order("completed", "2026-04-02", 1, 1000)])).toEqual({ mode: "period", orders: 1, delivered: 1, revenue: 10000 });
-    expect(campaignResults({ ...c, orders: 4, deliveredOrders: 3, revenue: 9 }, [])).toEqual({ mode: "manual", orders: 4, delivered: 3, revenue: 9 });
+    expect(campaignResults({ ...c, orders: 4, deliveredOrders: 3, revenue: 9 }, [o])).toEqual({ mode: "manual", orders: 4, delivered: 3, revenue: 9 });
+    // Deux campagnes en même temps : la commande va à la plus récente, une seule fois.
+    const older = { ...c, id: "C0", code: "", start: "2026-02-01" }, newer = { ...c, id: "C2", code: "", start: "2026-03-10" };
+    expect(campaignResults(newer, [o], "2026-04-30", [older, newer]).orders).toBe(1);
+    expect(campaignResults(older, [o], "2026-04-30", [older, newer]).orders).toBe(0);
     expect(trackedLink("https://x.cm/p", c)).toBe("https://x.cm/p?utm_source=meta&utm_medium=paid&utm_campaign=lampe-nov");
   });
 

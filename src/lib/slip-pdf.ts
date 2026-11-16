@@ -9,7 +9,7 @@ export type Slip = {
   subtotal: number;
   shipping: number;
   discount?: number;
-  /** Anciennes commandes seulement (frais ajoutés avant SasPay). */
+  /** Montant débité au client, s'il dépasse le total (anciennes commandes avec frais ajoutés). */
   paymentFee?: number;
   paymentLabel?: string;
   total: number;
@@ -87,7 +87,7 @@ export function slipPdf(s: Slip): Uint8Array {
   y -= 6;
   row("Total", fmt(s.total), true, 13);
   if (s.invoice && s.invoice.charged > s.total) {
-    row("Frais du prestataire de paiement (SasPay)", fmt(s.invoice.charged - s.total), false, 9);
+    row("Frais du prestataire de paiement", fmt(s.invoice.charged - s.total), false, 9);
     row("Montant débité", fmt(s.invoice.charged), true, 10);
   }
 

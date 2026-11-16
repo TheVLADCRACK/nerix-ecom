@@ -68,6 +68,8 @@ export type Product = {
   tag: string;
   images: ProductImage[];
   variants: Variant[];
+  /** Vrai par défaut : le produit s'affiche « Épuisé » et ne se commande plus quand son stock est à zéro. */
+  soldOutWhenEmpty: boolean;
   specs: { label: string; value: string; source: string }[];
   body: ProductBlock[];
   seoTitle: string;
@@ -108,7 +110,7 @@ export type Order = {
   settled?: boolean;
   /** Origine de la commande (paramètres utm du lien publicitaire). */
   source?: { channel: string; campaign: string };
-  /** Anciennes commandes seulement : frais de paiement ajoutés avant SasPay. */
+  /** Anciennes commandes seulement : frais de paiement ajoutés au total. */
   paymentFee?: number;
   /** Archivée (test, doublon) : affichée en grisé, exclue des statistiques, du stock et de la comptabilité. */
   archived?: boolean;

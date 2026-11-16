@@ -10,13 +10,13 @@ const MAX_BYTES = 10 * 1024 * 1024;
 let client: AwsClient | undefined;
 const s3 = () =>
   (client ??= new AwsClient({
-    accessKeyId: env().S3_ACCESS_KEY_ID,
-    secretAccessKey: env().S3_SECRET_ACCESS_KEY,
-    region: env().S3_REGION,
+    accessKeyId: env().AWS_ACCESS_KEY_ID,
+    secretAccessKey: env().AWS_SECRET_ACCESS_KEY,
+    region: env().AWS_REGION,
     service: "s3",
   }));
 
-export const publicMediaUrl = (key: string) => `${env().S3_ENDPOINT}/${env().S3_BUCKET}/${key}`;
+export const publicMediaUrl = (key: string) => `${env().AWS_ENDPOINT_URL_S3}/${env().S3_BUCKET}/${key}`;
 
 async function put(key: string, body: Buffer, contentType: string) {
   const res = await s3().fetch(publicMediaUrl(key), {

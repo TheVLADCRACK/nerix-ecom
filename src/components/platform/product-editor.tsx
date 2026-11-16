@@ -9,9 +9,11 @@ import { uploadImage } from "@/server/actions/manage";
 import { addProductImage, removeProductImage, saveProduct } from "@/server/actions/settings";
 
 type V = { id: string; title: string; sku: string; price: string; compareAt: string; available: number };
+type Img = { src: string; srcSet: string; width: number; height: number; alt: string; kind: "photo" | "creative" };
+export type StockItem = { product: string; skus: string[]; left: number };
 
-/** Fiche produit de l'admin : infos, images (envoyées et ré-encodées côté serveur), variantes et prix, publication, référencement. */
-export function ProductEditor({ storeSlug, base, product, categories }: { storeSlug: string; base: string; product: Product | null; categories: Category[] }) {
+/** Fiche produit de l'admin : infos, produit en stock lié, images (envoyées et ré-encodées côté serveur), variantes et prix, publication, référencement. */
+export function ProductEditor({ storeSlug, base, product, categories, stockItems }: { storeSlug: string; base: string; product: Product | null; categories: Category[]; stockItems: StockItem[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -29,22 +31,41 @@ export function ProductEditor({ storeSlug, base, product, categories }: { storeS
     return list.length ? list : [{ id: "", title: "Standard", sku: "", price: "", compareAt: "", available: 0 }];
   });
   const [kind, setKind] = useState<"photo" | "creative">("photo");
+  const [soldOut, setSoldOut] = useState(product?.soldOutWhenEmpty ?? true);
+  // Produit en stock déjà lié : par SKU, sinon par nom identique (achats saisis avant la fiche).
+  const [stockRef, setStockRef] = useState(() => {
+    const skus = product?.variants.map((v) => v.sku) ?? [];
+    return (stockItems.find((s) => s.skus.some((k) => skus.includes(k))) ?? stockItems.find((s) => product && s.product === product.name))?.product ?? "";
+  });
+  const linked = stockItems.find((s) => s.product === stockRef);
+  // Images d'un produit pas encore enregistré : gardées ici, ajoutées à la création.
+  const [draftImgs, setDraftImgs] = useState<Img[]>([]);
 
   const setVar = (i: number, patch: Partial<V>) => setVars(vars.map((v, k) => (k === i ? { ...v, ...patch } : v)));
+  /** Lier un produit en stock : reprend son nom si la fiche n'en a pas encore, et son SKU pour une variante vide. */
+  const pickStock = (ref: string) => {
+    setStockRef(ref);
+    const s = stockItems.find((x) => x.product === ref);
+    if (!s) return;
+    if (!name.trim()) { setName(s.product); if (!product) setSlug(slugify(s.product)); }
+    if (s.skus[0] && vars.length === 1 && !vars[0]!.sku) setVar(0, { sku: s.skus[0] });
+  };
   const save = () => start(async () => {
     const r = await saveProduct(storeSlug, product?.slug ?? "nouveau", {
       name: name.trim(), slug: slug || slugify(name), short: short.trim(), status, categoryPath: cat, brand: brand.trim(), seoTitle: seoTitle.trim() || name.trim().slice(0, 70), seoDescription: seoDesc.trim(),
       variants: vars.map((v) => ({ id: v.id, title: v.title.trim(), sku: v.sku.trim().toUpperCase(), price: Number(v.price.replace(/\s/g, "")) || 0, compareAt: v.compareAt ? Number(v.compareAt.replace(/\s/g, "")) : null })),
+      soldOutWhenEmpty: soldOut, stockProduct: stockRef, images: product ? [] : draftImgs,
     });
     setMsg(r.ok ? { ok: true, text: r.message ?? "Enregistré." } : { ok: false, text: r.error });
     if (r.ok) router.refresh();
   });
   const upload = (file: File) => start(async () => {
-    if (!product) return setMsg({ ok: false, text: "Enregistrez d'abord le produit, puis ajoutez les images." });
     const fd = new FormData(); fd.append("file", file);
     const up = await uploadImage(storeSlug, "products", fd);
     if (!up.ok) return setMsg({ ok: false, text: up.error });
-    const r = await addProductImage(storeSlug, product.slug, { src: up.src, srcSet: up.srcSet, width: up.width, height: up.height, alt: product.name, kind });
+    const img: Img = { src: up.src, srcSet: up.srcSet, width: up.width, height: up.height, alt: (product?.name ?? name.trim()).slice(0, 160), kind };
+    if (!product) { setDraftImgs((l) => [...l, img]); return setMsg({ ok: true, text: "Image prête : elle sera ajoutée à l'enregistrement du produit." }); }
+    const r = await addProductImage(storeSlug, product.slug, img);
     setMsg(r.ok ? { ok: true, text: "Image ajoutée." } : { ok: false, text: r.error });
     router.refresh();
   });
@@ -67,6 +88,13 @@ export function ProductEditor({ storeSlug, base, product, categories }: { storeS
             <div className="nx-card nx-grid">
               <label className="nx-field"><span>Nom</span><input className="nx-input" value={name} maxLength={120} onChange={(e) => { setName(e.target.value); if (!product) setSlug(slugify(e.target.value)); }} /></label>
               <label className="nx-field"><span>Accroche</span><textarea className="nx-textarea" style={{ minHeight: 70 }} value={short} maxLength={400} onChange={(e) => setShort(e.target.value)} /><small>Affichée sous le titre et dans les cartes produit. Courte : les clients n'ont pas le temps de lire.</small></label>
+              <label className="nx-field"><span>Produit en stock lié</span>
+                <select className="nx-select" value={stockRef} onChange={(e) => pickStock(e.target.value)}>
+                  <option value="">Aucun (pas encore acheté)</option>
+                  {stockItems.map((s) => <option key={s.product} value={s.product}>{s.product} · {s.left} en stock</option>)}
+                </select>
+                <small>{linked ? `Le stock de cette fiche est celui de « ${linked.product} » (${linked.left} restants), alimenté par les achats.` : <>Choisissez le produit acheté auquel cette fiche se rapporte. La liste vient des <Link href={`${base}/achats`} style={{ color: "var(--nx-blue)" }}>achats</Link>.</>}</small>
+              </label>
             </div>
           </section>
           <section className="nx-panel">
@@ -84,6 +112,14 @@ export function ProductEditor({ storeSlug, base, product, categories }: { storeS
                   <figcaption style={{ fontSize: 11, color: "var(--nx-muted)", textAlign: "center" }}>{im.kind === "creative" ? "Créative" : "Photo"}</figcaption>
                   <button type="button" className="nx-btn sm icon danger" style={{ position: "absolute", top: 4, right: 4, height: 24, width: 24, padding: 0, justifyContent: "center" }} aria-label="Retirer l'image" disabled={pending}
                     onClick={() => start(async () => { await removeProductImage(storeSlug, product.slug, im.src); router.refresh(); })}><Icon name="x" size={12} /></button>
+                </figure>
+              ))}
+              {draftImgs.map((im) => (
+                <figure key={im.src} style={{ margin: 0, position: "relative" }}>
+                  <img src={im.src} alt={im.alt} style={{ width: 96, height: 96, objectFit: "contain", borderRadius: 10, border: "1px dashed var(--nx-line)", background: "#fff" }} />
+                  <figcaption style={{ fontSize: 11, color: "var(--nx-muted)", textAlign: "center" }}>{im.kind === "creative" ? "Créative" : "Photo"} · à enregistrer</figcaption>
+                  <button type="button" className="nx-btn sm icon danger" style={{ position: "absolute", top: 4, right: 4, height: 24, width: 24, padding: 0, justifyContent: "center" }} aria-label="Retirer l'image" disabled={pending}
+                    onClick={() => setDraftImgs((l) => l.filter((x) => x.src !== im.src))}><Icon name="x" size={12} /></button>
                 </figure>
               ))}
               <label className="nx-new" style={{ width: 96, height: 96, minHeight: 0 }}><Icon name="image" /><small>{pending ? "Envoi…" : "JPEG, PNG, WebP · 10 Mo"}</small>
@@ -104,13 +140,18 @@ export function ProductEditor({ storeSlug, base, product, categories }: { storeS
                         <td><input className="nx-input mono" value={v.sku} onChange={(e) => setVar(i, { sku: e.target.value.toUpperCase() })} aria-label="SKU" placeholder="EP-XXX" /></td>
                         <td><input className="nx-input mono" inputMode="numeric" value={v.price} onChange={(e) => setVar(i, { price: e.target.value })} aria-label="Prix" /></td>
                         <td><input className="nx-input mono" inputMode="numeric" value={v.compareAt} onChange={(e) => setVar(i, { compareAt: e.target.value })} aria-label="Prix barré" placeholder="—" /></td>
-                        <td className="right mono">{v.available}</td>
+                        <td className="right mono">{product && !product.soldOutWhenEmpty ? "Sans limite" : v.available}</td>
                         <td>{vars.length > 1 && <button type="button" className="nx-btn sm icon" aria-label="Retirer la variante" onClick={() => setVars(vars.filter((_, k) => k !== i))}><Icon name="trash" size={14} /></button>}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              <label style={{ display: "flex", gap: 10, alignItems: "flex-start", margin: 12, fontSize: 14 }}>
+                <input type="checkbox" checked={soldOut} onChange={(e) => setSoldOut(e.target.checked)} style={{ marginTop: 3 }} />
+                <span><strong style={{ fontWeight: 500 }}>Marquer « Épuisé » quand le stock est à zéro</strong><br />
+                  <small className="muted">{soldOut ? "Le produit ne se commande plus sans stock." : "Désactivé : le produit reste commandable même sans stock (précommande, réassort en route)."}</small></span>
+              </label>
               <p className="nx-alert" style={{ margin: 12 }}>Le stock vient des <Link href={`${base}/achats`} style={{ color: "var(--nx-blue)" }}>achats</Link> : il baisse à chaque commande et à chaque perte. Le prix barré n'est affiché que s'il est réellement pratiqué.</p>
             </div>
           </section>

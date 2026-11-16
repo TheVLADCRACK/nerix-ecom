@@ -1,5 +1,5 @@
 // Moyens de paiement (Cameroun). Aucun frais affiché ni ajouté par la boutique : le client paie le total affiché ;
-// les frais du prestataire en ligne (SasPay) apparaissent seulement sur sa page de paiement.
+// la commission du prestataire en ligne (KPay) est retenue sur le montant reçu par la boutique.
 
 export type PayMethod = "cod" | "mobile_money" | "card";
 

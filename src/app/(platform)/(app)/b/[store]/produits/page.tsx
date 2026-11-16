@@ -41,7 +41,7 @@ export default async function Products({ params }: StoreParams) {
                       </td>
                       <td><span className="nx-pill ok">Actif</span></td>
                       <td className="muted">{categories.find((c) => c.path === p.categoryPath)?.name}</td>
-                      <td className="right"><span className={`nx-pill ${stock <= 5 ? "wait" : "ok"}`}>{stock}</span></td>
+                      <td className="right">{p.soldOutWhenEmpty ? <span className={`nx-pill ${stock <= 5 ? "wait" : "ok"}`}>{stock}</span> : <span className="nx-pill ok" title="Toujours commandable, même sans stock">Sans limite</span>}</td>
                       <td className="right mono">{Math.min(...prices) === Math.max(...prices) ? xaf(prices[0]!) : `${xaf(Math.min(...prices))} – ${xaf(Math.max(...prices))}`}</td>
                       <td><Link href={`${base}/produits/${p.slug}`} className="nx-btn sm">Modifier</Link></td>
                     </tr>

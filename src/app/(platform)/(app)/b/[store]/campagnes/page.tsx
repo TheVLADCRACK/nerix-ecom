@@ -24,7 +24,7 @@ export default async function Campaigns({ params, searchParams }: StoreParams & 
   const pct = (a: number, b: number) => (b ? `${(Math.round((a / b) * 1000) / 10).toString().replace(".", ",")} %` : "—");
   return (
     <>
-      <div className="nx-head"><div><h1>Campagnes et pixels</h1><p>Ce que coûte la publicité et ce qu'elle rapporte. Avec le lien suivi, une campagne compte ses propres visites et commandes ; sans lui, elle compte tout ce qui arrive pendant sa période (des campagnes simultanées se partagent alors les chiffres).</p></div></div>
+      <div className="nx-head"><div><h1>Campagnes et pixels</h1><p>Ce que coûte la publicité et ce qu'elle rapporte. Le budget compte le jour où il est engagé : au lancement, puis à chaque ajout ; arrêter une campagne ne change pas sa dépense. Avec le lien suivi, une campagne compte ses propres commandes ; sans lui, elle prend les commandes de sa période (quand plusieurs tournent ensemble, la plus récente). Les campagnes du classeur gardent leurs chiffres saisis.</p></div></div>
       <PeriodPicker base={`${base}/campagnes`} period={p.period} year={p.year} />
       <div className="nx-grid k4">
         <Kpi label="Visiteurs" value={nf(traffic.visitors)} delta={`${nf(traffic.views)} pages vues · ${traffic.live} en ce moment`} />
@@ -46,7 +46,7 @@ export default async function Campaigns({ params, searchParams }: StoreParams & 
               <thead><tr><th scope="col">Campagne</th><th scope="col">Période</th><th scope="col" className="right">Dépense</th><th scope="col" className="right">Visiteurs</th><th scope="col" className="right">Commandes</th><th scope="col" className="right">Livrées</th><th scope="col" className="right">CA attribué</th><th scope="col" className="right">ROAS</th><th scope="col" className="right">Coût / livrée</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {list.map((c, i) => {
-                  const res = campaignResults(c, orders, today);
+                  const res = campaignResults(c, orders, today, list);
                   const v = visits[i]!;
                   const spend = spendXaf(c);
                   return (
@@ -60,7 +60,7 @@ export default async function Campaigns({ params, searchParams }: StoreParams & 
                     <td className="right mono">{res.revenue ? fcfa(res.revenue) : "—"}</td>
                     <td className="right mono">{res.revenue && spend ? (res.revenue / spend).toFixed(2).replace(".", ",") : "—"}</td>
                     <td className="right mono">{res.delivered ? fcfa(spend / res.delivered) : "—"}</td>
-                    <td><CampaignActions storeSlug={store.slug} id={c.id} running={running(c)} /></td>
+                    <td><CampaignActions storeSlug={store.slug} id={c.id} running={running(c)} start={c.start} end={c.end} /></td>
                   </tr>
                   );
                 })}

@@ -102,7 +102,8 @@ export const getBooks = cache(async (store: StoreFull): Promise<Books> => {
     lots: lots.map((l): Lot => ({ id: l.id, product: l.product, skus: l.skus, date: day(l.purchased_on), quantity: l.quantity, unitPrice: Number(l.unit_price), supplier: l.supplier,
       fees: { transport: 0, customs: 0, shipping: 0, packaging: 0, bank: 0, other: 0, ...Object.fromEntries(Object.entries(l.fees).map(([k, v]) => [k, Number(v)])) } })),
     campaigns: campaigns.map((c) => ({ id: c.id, code: c.code, platform: c.platform, name: c.name, products: c.products, start: day(c.start_on), end: c.end_on ? day(c.end_on) : null,
-      spend: Number(c.spend), currency: c.currency, rate: Number(c.rate), orders: c.orders, deliveredOrders: c.delivered, revenue: c.revenue })),
+      spend: Number(c.spend), currency: c.currency, rate: Number(c.rate), orders: c.orders, deliveredOrders: c.delivered, revenue: c.revenue,
+      budgetAdds: (c.budget_adds ?? []).map((a: { date: string; amount: number }) => ({ date: a.date, amount: Number(a.amount) })) })),
     charges: charges.map((c) => ({ id: c.id, date: day(c.spent_on), category: c.category, description: c.description, amount: Number(c.amount), paymentMethod: c.payment_method, includedInProductCost: c.included_in_cost, monthly: c.monthly })),
     losses: losses.map((l) => ({ id: l.id, date: day(l.lost_on), product: l.product, quantity: l.quantity, reason: l.reason, note: l.note })),
   };
@@ -124,7 +125,7 @@ export const getCatalog = cache(async (storeId: string) => {
     id: p.id, slug: p.slug, name: p.name, status: p.status, categoryPath: p.category_path, brand: p.brand, short: p.short, tag: p.tag,
     images: images.filter((i) => i.product_id === p.id).map((i) => ({ src: i.src, srcSet: i.src_set, alt: i.alt, width: i.width, height: i.height, kind: i.kind })),
     variants: variants.filter((v) => v.product_id === p.id).map((v) => ({ id: v.id, sku: v.sku, title: v.title, price: v.price, compareAt: v.compare_at, available: stock.get(v.sku) ?? 0 })),
-    specs: p.specs, body: p.body as ProductBlock[], seoTitle: p.seo_title, seoDescription: p.seo_description,
+    soldOutWhenEmpty: p.sold_out_when_empty ?? true, specs: p.specs, body: p.body as ProductBlock[], seoTitle: p.seo_title, seoDescription: p.seo_description,
   }));
   return { categories, products: list };
 });

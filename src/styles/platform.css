@@ -87,6 +87,7 @@
 .nx-btn.blue { background: var(--nx-blue); border-color: var(--nx-blue); color: #fff; }
 .nx-btn.ghost { border-color: transparent; background: transparent; }
 .nx-btn.danger { color: var(--nx-red); }
+.nx-trash:hover:not(:disabled), .nx-trash:focus-visible { color: var(--nx-red); border-color: var(--nx-red); }
 .nx-btn.sm { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; }
 .nx-btn.icon { width: 30px; padding: 0; justify-content: center; }
 .nx-field { display: grid; gap: 6px; }

@@ -8,8 +8,8 @@ import { AwsClient } from "aws4fetch";
 
 const E = process.env;
 const SRC = new URL("../dossier sans titre/", import.meta.url);
-const s3 = new AwsClient({ accessKeyId: E.S3_ACCESS_KEY_ID, secretAccessKey: E.S3_SECRET_ACCESS_KEY, region: E.S3_REGION, service: "s3" });
-const url = (key) => `${E.S3_ENDPOINT}/${E.S3_BUCKET}/${key}`;
+const s3 = new AwsClient({ accessKeyId: E.AWS_ACCESS_KEY_ID, secretAccessKey: E.AWS_SECRET_ACCESS_KEY, region: E.AWS_REGION, service: "s3" });
+const url = (key) => `${E.AWS_ENDPOINT_URL_S3}/${E.S3_BUCKET}/${key}`;
 
 // crop = [gauche, haut, côté] mesurés sur une vignette de 420 px de large (converti à l'échelle réelle).
 const PLAN = {

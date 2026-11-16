@@ -7,7 +7,7 @@ import { one, q, tx } from "@/lib/db";
 import { env, onlinePayEnabled } from "@/lib/env";
 import { isCmMobile, normalizeCmPhone } from "@/lib/format";
 import { clientIpHash, randomToken, rateLimit, safeEqual, sha256 } from "@/lib/security";
-import { createCheckout } from "@/server/saspay";
+import { createCheckout } from "@/server/kpay";
 import { reconcilePayment } from "@/server/payments";
 import { getStore } from "@/server/repo";
 import type { Slip } from "@/lib/slip-pdf";
@@ -99,11 +99,11 @@ export async function placeOrder(slug: string, input: z.input<typeof OrderIn>): 
   await alertLowStock(store.id, store.slug, store.settings.lowStock, res.lines.map((l) => ({ sku: l.sku, name: l.name })));
   if (!online) return { ...summary, payment: { method: "cod" } };
 
-  // Paiement en ligne : la commande existe déjà ; seule une vérification SasPay (webhook ou retour) la passera en « payée ».
+  // Paiement en ligne : la commande existe déjà ; seule une vérification KPay (webhook ou retour) la passera en « payée ».
   const back = `${env().APP_URL.replace(/\/$/, "")}/s/${store.slug}/commande/confirmation/${res.number}?t=${token}`;
   const externalId = `${res.number}-1`;
-  await q("INSERT INTO ecom.payments (store_id, order_id, provider, method, external_id, amount) VALUES ($1,$2,'saspay',$3,$4,$5)", [store.id, res.id, v.payment, externalId, res.total]);
-  const init = await createCheckout({ amount: res.total, name: `${v.firstName} ${v.lastName}`, phone, description: `Commande ${res.number} · ${store.name}`, returnUrl: back, metadata: { order: res.number, store: store.slug } })
+  await q("INSERT INTO ecom.payments (store_id, order_id, provider, method, external_id, amount) VALUES ($1,$2,'kpay',$3,$4,$5)", [store.id, res.id, v.payment, externalId, res.total]);
+  const init = await createCheckout({ amount: res.total, externalId, description: `Commande ${res.number} · ${store.name}`, returnUrl: back })
     .catch(() => ({ ok: false as const, message: "réseau" }));
   if (!init.ok) {
     await q("UPDATE ecom.payments SET status = 'FAILED', updated_at = now() WHERE external_id = $1", [externalId]);
@@ -121,7 +121,7 @@ export async function orderPaymentStatus(slug: string, number: string, token: st
   const o = await one<{ payment_status: string; access_hash: string | null; id: string }>("SELECT id, payment_status, access_hash FROM ecom.orders WHERE store_id = $1 AND number = $2", [store.id, number.slice(0, 40)]);
   if (!o?.access_hash || !safeEqual(o.access_hash, sha256(token))) return null;
   if (o.payment_status === "paid") return { paid: true, failed: false };
-  // Retour de la page de paiement : on demande le statut à SasPay (jamais la redirection seule).
+  // Retour de la page de paiement : on demande le statut à KPay (jamais la redirection seule).
   const p = await one<{ id: string; status: string }>("SELECT id, status FROM ecom.payments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1", [o.id]);
   const status = p && p.status === "PENDING" ? await reconcilePayment(p.id).catch(() => p.status) : p?.status;
   return { paid: status === "COMPLETED", failed: status === "FAILED" || status === "CANCELLED" };

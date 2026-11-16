@@ -20,7 +20,7 @@ function download(s: Slip) {
 
 /**
  * Bordereau proposé au téléchargement (jamais automatique) ; Purchase envoyé une seule fois.
- * Paiement en ligne : attend la confirmation du serveur (vérification SasPay) avant de marquer « Payé ».
+ * Paiement en ligne : attend la confirmation du serveur (vérification KPay) avant de marquer « Payé ».
  */
 export function SlipDownload({ storeSlug, number, token }: { storeSlug: string; number: string; token: string }) {
   const [slip, setSlip] = useState<Stored | null>(null);

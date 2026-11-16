@@ -3,7 +3,8 @@
 import type { Order } from "./types";
 
 export type Lot = { id: string; product: string; skus: string[]; date: string; quantity: number; unitPrice: number; fees: { transport: number; customs: number; shipping: number; packaging: number; bank: number; other: number }; supplier: string };
-export type Campaign = { id: string; code: string; platform: string; name: string; products: string; start: string; end: string | null; spend: number; currency: "XAF" | "EUR"; rate: number; orders: number; deliveredOrders: number; revenue: number };
+/** spend = budget total (initial + ajouts) ; budgetAdds = ajouts datés, dans la devise de la campagne. */
+export type Campaign = { id: string; code: string; platform: string; name: string; products: string; start: string; end: string | null; spend: number; currency: "XAF" | "EUR"; rate: number; orders: number; deliveredOrders: number; revenue: number; budgetAdds?: { date: string; amount: number }[] };
 export type Charge = { id: string; date: string; category: string; description: string; amount: number; paymentMethod: string; includedInProductCost: boolean; monthly?: boolean };
 export type Loss = { id: string; date: string; product: string; quantity: number; reason: string; note: string };
 /** withdrawRate : frais de retrait Mobile Money sur l'argent encaissé ; stateTax : taxe de l'État (FCFA) par commande payée. */
@@ -27,16 +28,18 @@ export const spendXaf = (c: Campaign) => c.spend * (c.currency === "EUR" ? c.rat
 
 const DAY = 86400_000;
 const t = (d: string) => Date.parse(`${d.slice(0, 10)}T00:00:00Z`);
-/** Part d'une campagne tombant dans [from, to[ : répartie par jour entre début et fin (sinon tout à la date de début). */
-export function adsBetween(c: Campaign, from: string, to: string): number {
-  const a = t(c.start);
-  const b = c.end ? t(c.end) + DAY : a + DAY;
-  const days = Math.max(1, Math.round((b - a) / DAY));
-  const overlap = Math.max(0, Math.min(b, t(to)) - Math.max(a, t(from))) / DAY;
-  return (spendXaf(c) * Math.round(overlap)) / days;
-}
-
 const inRange = (d: string | undefined, from: string, to: string) => !!d && d.slice(0, 10) >= from && d.slice(0, 10) < to;
+
+/**
+ * Publicité d'une campagne comptée sur [from, to[ : le budget compte le jour où il est engagé (budget initial à la date de début,
+ * chaque ajout à sa date), comme dans le classeur. Arrêter ou relancer une campagne ne déplace donc jamais une dépense passée.
+ */
+export function adsBetween(c: Campaign, from: string, to: string): number {
+  const rate = c.currency === "EUR" ? c.rate : 1;
+  const adds = c.budgetAdds ?? [];
+  const initial = c.spend - adds.reduce((s, a) => s + a.amount, 0);
+  return ((inRange(c.start, from, to) ? initial : 0) + adds.filter((a) => inRange(a.date, from, to)).reduce((s, a) => s + a.amount, 0)) * rate;
+}
 
 export type Pnl = {
   revenue: number; cogs: number; gross: number; delivery: number; ads: number; charges: number; losses: number; withdraw: number;
@@ -108,15 +111,19 @@ export function expandCharges(charges: Charge[], until: string): Charge[] {
   return out;
 }
 
+const endOf = (c: Campaign, today: string) => new Date(t(c.end ?? today) + DAY).toISOString().slice(0, 10);
+
 /**
- * Résultats d'une campagne : commandes portant son code (lien suivi) ; sinon toutes les commandes passées pendant sa période
- * (début → fin, ou aujourd'hui si elle tourne encore) ; sinon les chiffres saisis à la main (anciennes campagnes).
+ * Résultats d'une campagne : commandes portant son code (lien suivi) ; sinon les chiffres saisis à la main (campagnes du classeur) ;
+ * sinon les commandes sans code passées pendant sa période (début → fin, ou aujourd'hui si elle tourne encore). Quand plusieurs
+ * campagnes tournent en même temps, une commande va à la plus récemment lancée : elle n'est jamais comptée deux fois.
  */
-export function campaignResults(c: Campaign, orders: Order[], today = new Date().toISOString().slice(0, 10)) {
+export function campaignResults(c: Campaign, orders: Order[], today = new Date().toISOString().slice(0, 10), all: Campaign[] = [c]) {
   const byCode = c.code ? orders.filter((o) => o.source?.campaign === c.code) : [];
-  const end = new Date(t(c.end ?? today) + DAY).toISOString().slice(0, 10);
-  const list = byCode.length ? byCode : orders.filter((o) => inRange(o.placedAt, c.start, end));
-  if (!list.length && (c.orders || c.revenue)) return { mode: "manual" as const, orders: c.orders, delivered: c.deliveredOrders, revenue: c.revenue };
+  if (!byCode.length && (c.orders || c.revenue)) return { mode: "manual" as const, orders: c.orders, delivered: c.deliveredOrders, revenue: c.revenue };
+  const codes = new Set(all.map((x) => x.code).filter(Boolean));
+  const owner = (o: Order) => all.filter((x) => !(x.orders || x.revenue) && inRange(o.placedAt, x.start, endOf(x, today))).sort((a, b) => b.start.localeCompare(a.start) || b.id.localeCompare(a.id))[0];
+  const list = byCode.length ? byCode : orders.filter((o) => !codes.has(o.source?.campaign ?? "") && owner(o)?.id === c.id);
   const done = list.filter((o) => o.status === "completed");
   return { mode: byCode.length ? ("code" as const) : ("period" as const), orders: list.length, delivered: done.length, revenue: done.reduce((s, o) => s + o.total, 0) };
 }

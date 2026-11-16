@@ -58,7 +58,7 @@ export async function saveStoreSettings(storeSlug: string, _: ActionResult | und
 /** Logo : image déjà envoyée et ré-encodée par uploadImage, URL de notre stockage uniquement. */
 export async function setStoreLogo(storeSlug: string, src: string): Promise<ActionResult> {
   const { staff, store } = await ctx(storeSlug, "settings.update");
-  const ok = z.url().startsWith(`${process.env.S3_ENDPOINT}/`).safeParse(src);
+  const ok = z.url().startsWith(`${process.env.AWS_ENDPOINT_URL_S3}/`).safeParse(src);
   if (!ok.success) return fail("Image invalide.");
   await q("UPDATE ecom.stores SET logo = $2, favicon = $2 WHERE id = $1", [store.id, src]);
   await audit(staff, store.id, "Logo remplacé", store.slug);
@@ -138,7 +138,13 @@ const VariantIn = z.object({ id: z.uuid().or(z.literal("")), title: text(60).min
 const ProductIn = z.object({
   name: text(120).min(2), slug: z.string().regex(slugRe), short: text(400), status: z.enum(["active", "draft", "archived"]), categoryPath: z.string().max(120), brand: text(60),
   seoTitle: text(70), seoDescription: text(170), variants: z.array(VariantIn).min(1).max(30),
+  soldOutWhenEmpty: z.boolean(),
+  /** Produit des achats (stock) auquel la fiche se rattache : ses SKU y sont reliés. Vide = aucun. */
+  stockProduct: text(80),
+  /** Images envoyées avant le premier enregistrement (création seulement). */
+  images: z.array(z.lazy(() => ImageIn)).max(20),
 }).strict();
+const ImageIn = z.object({ src: z.url().refine((s) => s.startsWith(`${process.env.AWS_ENDPOINT_URL_S3}/`)), srcSet: z.string().max(2000), width: z.number().int().positive(), height: z.number().int().positive(), alt: text(160), kind: z.enum(["photo", "creative"]) }).strict();
 
 export async function saveProduct(storeSlug: string, currentSlug: string, input: z.input<typeof ProductIn>): Promise<ActionResult> {
   const { staff, store } = await ctx(storeSlug, "catalog.update");
@@ -147,15 +153,20 @@ export async function saveProduct(storeSlug: string, currentSlug: string, input:
   const v = d.data;
   if (v.variants.some((x) => x.compareAt !== null && x.compareAt <= x.price)) return fail("Le prix barré doit être supérieur au prix.");
   if (!(await one("SELECT 1 FROM ecom.categories WHERE store_id = $1 AND path = $2", [store.id, v.categoryPath]))) return fail("Catégorie inconnue.");
+  if (v.stockProduct && !(await one("SELECT 1 FROM ecom.lots WHERE store_id = $1 AND product = $2", [store.id, v.stockProduct]))) return fail("Produit en stock inconnu.");
   const res = await tx(async (t) => {
     const existing = currentSlug === "nouveau" ? null : await t.one<{ id: string }>("SELECT id FROM ecom.products WHERE store_id = $1 AND slug = $2 FOR UPDATE", [store.id, currentSlug]);
     if (currentSlug !== "nouveau" && !existing) return fail("Produit introuvable.");
     const clash = await t.one<{ id: string }>("SELECT id FROM ecom.products WHERE store_id = $1 AND slug = $2", [store.id, v.slug]);
     if (clash && clash.id !== existing?.id) return fail("Cette adresse est déjà utilisée par un autre produit.");
     const id = existing
-      ? (await t.q("UPDATE ecom.products SET name=$3, slug=$4, short=$5, status=$6, category_path=$7, brand=$8, seo_title=$9, seo_description=$10 WHERE store_id=$1 AND id=$2", [store.id, existing.id, v.name, v.slug, v.short, v.status, v.categoryPath, v.brand || null, v.seoTitle, v.seoDescription]), existing.id)
-      : (await t.one<{ id: string }>("INSERT INTO ecom.products (store_id, name, slug, short, status, category_path, brand, seo_title, seo_description, position) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,(SELECT coalesce(max(position),0)+1 FROM ecom.products WHERE store_id=$1)) RETURNING id",
-          [store.id, v.name, v.slug, v.short, v.status, v.categoryPath, v.brand || null, v.seoTitle, v.seoDescription]))!.id;
+      ? (await t.q("UPDATE ecom.products SET name=$3, slug=$4, short=$5, status=$6, category_path=$7, brand=$8, seo_title=$9, seo_description=$10, sold_out_when_empty=$11 WHERE store_id=$1 AND id=$2", [store.id, existing.id, v.name, v.slug, v.short, v.status, v.categoryPath, v.brand || null, v.seoTitle, v.seoDescription, v.soldOutWhenEmpty]), existing.id)
+      : (await t.one<{ id: string }>("INSERT INTO ecom.products (store_id, name, slug, short, status, category_path, brand, seo_title, seo_description, sold_out_when_empty, position) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,(SELECT coalesce(max(position),0)+1 FROM ecom.products WHERE store_id=$1)) RETURNING id",
+          [store.id, v.name, v.slug, v.short, v.status, v.categoryPath, v.brand || null, v.seoTitle, v.seoDescription, v.soldOutWhenEmpty]))!.id;
+    if (!existing) for (const [i, im] of v.images.entries()) {
+      await t.q("INSERT INTO ecom.product_images (store_id, product_id, src, src_set, alt, width, height, kind, position) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+        [store.id, id, im.src, im.srcSet, im.alt || v.name, im.width, im.height, im.kind, i + 1]);
+    }
     const keep = v.variants.filter((x) => x.id).map((x) => x.id);
     await t.q("DELETE FROM ecom.variants WHERE store_id = $1 AND product_id = $2 AND NOT (id = ANY($3::uuid[]))", [store.id, id, keep]);
     for (const [i, x] of v.variants.entries()) {
@@ -164,10 +175,14 @@ export async function saveProduct(storeSlug: string, currentSlug: string, input:
       if (x.id) await t.q("UPDATE ecom.variants SET title=$4, sku=$5, price=$6, compare_at=$7, position=$8 WHERE store_id=$1 AND product_id=$2 AND id=$3", [store.id, id, x.id, x.title, x.sku, x.price, x.compareAt, i]);
       else await t.q("INSERT INTO ecom.variants (store_id, product_id, title, sku, price, compare_at, position) VALUES ($1,$2,$3,$4,$5,$6,$7)", [store.id, id, x.title, x.sku, x.price, x.compareAt, i]);
     }
+    // Rattachement au stock : les SKU de la fiche quittent les autres achats et rejoignent ceux du produit choisi.
+    const skus = v.variants.map((x) => x.sku);
+    await t.q("UPDATE ecom.lots SET skus = array(SELECT unnest(skus) EXCEPT SELECT unnest($2::text[])) WHERE store_id = $1 AND skus && $2::text[] AND product <> $3", [store.id, skus, v.stockProduct]);
+    if (v.stockProduct) await t.q("UPDATE ecom.lots SET skus = array(SELECT DISTINCT unnest(skus || $2::text[])) WHERE store_id = $1 AND product = $3", [store.id, skus, v.stockProduct]);
     return { ok: true, message: "Produit enregistré." } as ActionResult;
   }).catch((e: Error) => fail(e.message.startsWith("SKU") ? e.message : "Enregistrement impossible."));
   if (res.ok) {
-    await audit(staff, store.id, currentSlug === "nouveau" ? "Produit créé" : "Produit modifié", v.slug, { status: v.status, prices: v.variants.map((x) => [x.sku, x.price]) });
+    await audit(staff, store.id, currentSlug === "nouveau" ? "Produit créé" : "Produit modifié", v.slug, { status: v.status, prices: v.variants.map((x) => [x.sku, x.price]), stockProduct: v.stockProduct, soldOutWhenEmpty: v.soldOutWhenEmpty });
     refresh(store.slug);
     if (currentSlug !== v.slug) redirect(`/b/${store.slug}/produits/${v.slug}`);
   }
@@ -177,7 +192,7 @@ export async function saveProduct(storeSlug: string, currentSlug: string, input:
 /** Ajoute une image déjà envoyée (uploadImage) à la galerie d'un produit. */
 export async function addProductImage(storeSlug: string, productSlug: string, img: { src: string; srcSet: string; width: number; height: number; alt: string; kind: "photo" | "creative" }): Promise<ActionResult> {
   const { staff, store } = await ctx(storeSlug, "catalog.update");
-  const d = z.object({ src: z.url().startsWith(`${process.env.S3_ENDPOINT}/`), srcSet: z.string().max(2000), width: z.number().int().positive(), height: z.number().int().positive(), alt: text(160), kind: z.enum(["photo", "creative"]) }).strict().safeParse(img);
+  const d = z.object({ src: z.url().startsWith(`${process.env.AWS_ENDPOINT_URL_S3}/`), srcSet: z.string().max(2000), width: z.number().int().positive(), height: z.number().int().positive(), alt: text(160), kind: z.enum(["photo", "creative"]) }).strict().safeParse(img);
   if (!d.success) return fail("Image invalide.");
   const p = await one<{ id: string }>("SELECT id FROM ecom.products WHERE store_id = $1 AND slug = $2", [store.id, productSlug]);
   if (!p) return fail("Produit introuvable.");

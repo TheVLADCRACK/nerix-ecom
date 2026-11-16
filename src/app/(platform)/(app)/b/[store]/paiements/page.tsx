@@ -21,10 +21,10 @@ export default async function Payments({ params }: StoreParams) {
           </div>
         </section>
         <section className="nx-panel">
-          <header><span className="nx-label">Paiement en ligne (SasPay)</span>{online ? <span className="nx-pill ok">Actif</span> : <span className="nx-pill wait">Clés à renseigner</span>}</header>
+          <header><span className="nx-label">Paiement en ligne (KPay)</span>{online ? <span className="nx-pill ok">Actif</span> : <span className="nx-pill wait">Clés à renseigner</span>}</header>
           <div className="nx-card nx-grid">
-            <p style={{ color: "var(--nx-muted)", fontSize: 13 }}>Orange Money, MTN MoMo et carte bancaire, sur la page sécurisée SasPay. La boutique affiche le prix sans frais ; les frais SasPay apparaissent seulement sur leur page de paiement. La commande passe en « Payée » après vérification auprès de SasPay.</p>
-            {!online && <p className="nx-alert">Renseignez <code>SASPAY_API_KEY</code> et <code>SASPAY_WEBHOOK_SECRET</code> dans le fichier d'environnement. Webhook à créer dans SasPay : <code>https://ecom.nerix.site/api/webhooks/saspay</code>.</p>}
+            <p style={{ color: "var(--nx-muted)", fontSize: 13 }}>Orange Money, MTN MoMo et carte bancaire, sur la page sécurisée KPay. La boutique affiche le prix sans frais ; la commission KPay est retenue sur le montant reçu. La commande passe en « Payée » après le webhook signé et la vérification auprès de KPay.</p>
+            {!online && <p className="nx-alert">Renseignez <code>KPAY_API_KEY</code>, <code>KPAY_SECRET_KEY</code> et <code>KPAY_WEBHOOK_SECRET</code> dans le fichier d'environnement. URL de webhook à déclarer dans KPay : <code>https://ecom.nerix.site/api/webhooks/kpay</code>.</p>}
           </div>
         </section>
       </div>
