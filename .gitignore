@@ -1,0 +1,15 @@
+node_modules/
+.next/
+out/
+coverage/
+.env*
+!.env.example
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+# Ressources sources lourdes (importées dans Neon Object Storage)
+dossier sans titre/
+
+# Données réelles extraites du classeur ERP (données personnelles)
+data-private/

@@ -1,0 +1,22 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nerix-ecom",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "recette",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/dev-recette.mjs"
+      ],
+      "port": 3000
+    }
+  ]
+}

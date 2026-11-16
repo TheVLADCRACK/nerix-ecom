@@ -1,0 +1,41 @@
+{
+  "name": "energy-plus",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
+    "db:seed": "node --env-file=.env.local scripts/seed.mjs",
+    "media:import": "node --env-file=.env.local scripts/import-media.mjs",
+    "db:import": "node --env-file=.env.local scripts/import-data.mjs"
+  },
+  "dependencies": {
+    "@neon/auth": "0.8.2",
+    "@neondatabase/serverless": "1.2.1",
+    "aws4fetch": "1.0.20",
+    "marked": "18.2.0",
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "sanitize-html": "2.18.2",
+    "server-only": "0.0.1",
+    "sharp": "0.35.5",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.2.3",
+    "@types/sanitize-html": "2.16.2",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
+  }
+}
