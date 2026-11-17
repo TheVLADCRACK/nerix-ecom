@@ -104,10 +104,11 @@ export async function placeOrder(slug: string, input: z.input<typeof OrderIn>): 
   const externalId = `${res.number}-1`;
   await q("INSERT INTO ecom.payments (store_id, order_id, provider, method, external_id, amount) VALUES ($1,$2,'kpay',$3,$4,$5)", [store.id, res.id, v.payment, externalId, res.total]);
   const init = await createCheckout({ amount: res.total, externalId, description: `Commande ${res.number} · ${store.name}`, returnUrl: back })
-    .catch(() => ({ ok: false as const, message: "réseau" }));
+    .catch((e: unknown) => ({ ok: false as const, message: `KPay injoignable (${e instanceof Error ? e.name : "erreur"})` }));
   if (!init.ok) {
+    console.error(`[kpay] init ${externalId} : ${init.message}`);
     await q("UPDATE ecom.payments SET status = 'FAILED', updated_at = now() WHERE external_id = $1", [externalId]);
-    await q("INSERT INTO ecom.order_events (store_id, order_id, label) VALUES ($1,$2,'Paiement en ligne refusé au lancement')", [store.id, res.id]);
+    await q("INSERT INTO ecom.order_events (store_id, order_id, label) VALUES ($1,$2,$3)", [store.id, res.id, `Paiement en ligne refusé au lancement (${init.message})`]);
     return { ok: false, error: `Votre commande ${res.number} est enregistrée, mais le paiement n'a pas pu démarrer. Nous vous appelons pour la régler à la livraison.` };
   }
   await q("UPDATE ecom.payments SET provider_payment_id = $2, gateway_url = $3, updated_at = now() WHERE external_id = $1", [externalId, init.id, init.url]);

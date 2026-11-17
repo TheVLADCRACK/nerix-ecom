@@ -22,12 +22,14 @@ export type Checkout = { ok: true; id: string; url: string } | { ok: false; mess
 
 /** Crée la page de paiement d'une commande (externalId unique : un 409 signifie « déjà créée »). */
 export async function createCheckout(i: { amount: number; externalId: string; description: string; returnUrl: string }): Promise<Checkout> {
-  const { status, data } = await call<{ id?: string; gatewayUrl?: string }>("/api/v1/payments/init", {
+  const { status, data } = await call<{ id?: string; gatewayUrl?: string; code?: string; message?: string | string[] }>("/api/v1/payments/init", {
     method: "POST",
     body: JSON.stringify({ amount: Math.round(i.amount), currency: "XAF", externalId: i.externalId, description: i.description.slice(0, 120), returnUrl: i.returnUrl }),
   });
   if ((status === 200 || status === 201) && data.id && data.gatewayUrl) return { ok: true, id: data.id, url: data.gatewayUrl };
-  return { ok: false, message: `KPay ${status}` };
+  // Motif renvoyé par KPay (ex. 401 INVALID_CREDENTIALS) : jamais de clé ni de données client dedans.
+  const why = [data.code, Array.isArray(data.message) ? data.message.join(", ") : data.message].filter(Boolean).join(" ");
+  return { ok: false, message: `KPay ${status}${why ? ` ${why}` : ""}`.slice(0, 200) };
 }
 
 /** Statut qui fait foi, relu chez KPay (jamais repris du webhook ou de la redirection). */
